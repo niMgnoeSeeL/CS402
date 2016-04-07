@@ -25,141 +25,18 @@ object Nono {
             case n => lineList = lineList :+ n
         }
 
-        for(i <- 1 to sizeX){
-            for(j <- 1 to sizeY) CNFmini.addNewId("m"+i+j)
-        }
-        for(i <- 1 to sizeX){
-            for(j <- 1 to rowList(i-1).length){
-                for(k <- 1 to sizeY) CNFmini.addNewId("pr"+j+i+k)
-            } 
-        }
-        for(i <- 1 to sizeY){
-            for(j <- 1 to colList(i-1).length){
-                for(k <- 1 to sizeX) CNFmini.addNewId("pc"+j+k+i)
-            } 
-        }
+        //debug
+        println(sizeX)
+        println(sizeY)
+        println(rowList)
+        println(colList)
 
-        val formula: Formula = createFormula(sizeX, sizeY, rowList, colList)
-        val cnf: Formula = CNF.formToCNF(formula)
-        CNFmini.miniSATGen("Nono", cnf)
+        //val cNF = createCNF(sizeX, sizeY, rowList, colList)
+        //CNFmini.miniSATGen("Nono", cnf)
+        //"minisat Nono.in Nono.out".!
 
-        "minisat Nono.in Nono.out".!
-
-        val outputList = Source.fromFile("Nono.out").toList.tail.tail.tail.tail
-        visualize(outputList, sizeX, sizeY)
     }
 
-    def visualize(out: List[Char], sizeX: Int, sizeY: Int) {
-        val t: String = "0 "
-        val f: String = ". "
-        val writer = new PrintWriter(new File("output.txt"))
-        var counter: Int = 0
-        var curr: Boolean = true
-        var line: String = ""
-        val iter = out.iterator
-        while(counter < sizeX*sizeY){
-            iter.next match {
-                case ' ' => {
-                    line = line + (if(curr) t else f)
-                    counter = counter + 1
-                    curr = true
-                    if (counter % sizeY == 0) line = line+"\n"
-                }
-                case '-' => curr = false
-                case _ => ()
-            }
-        }
-        writer.write(line)
-        writer.close()
-    }
-
-    def createFormula(sizeX: Int, sizeY: Int, rowList: List[List[Int]], colList: List[List[Int]]): Formula = {
-        var wholeFormulaList: List[Formula] = List()
-        var rowNumber = 1
-        var colNumber = 1
-
-        //add one pivot for one block
-        var block3: List[Formula] = List()
-        for(i <- 1 to sizeX){
-            if (rowList(i-1)(0) != 0){
-                var block2: List[Formula] = List()
-                for(j <- 1 to rowList(i-1).length){
-                    
-                    var block1: List[Formula] = List()
-                    for(k <- 1 to sizeY) block1 = NonTerminal(Nothing, Not, Terminal("pr"+j+i+k)) :: block1
-                    for(k <- 1 to sizeY) block2 = wrapAnd(block1.updated(k-1, block1(k-1).asInstanceOf[NonTerminal].right)) :: block2
-                } 
-                block3 = wrapOr(block2) :: block3
-            }
-        }
-        val rowblocks: Formula = wrapAnd(block3)
-
-        block3 = List()
-        for(i <- 1 to sizeY){
-            if (colList(i-1)(0) != 0){
-                var block2: List[Formula] = List()
-                for(j <- 1 to colList(i-1).length){
-                    
-                    var block1: List[Formula] = List()
-                    for(k <- 1 to sizeX) block1 = NonTerminal(Nothing, Not, Terminal("pc"+j+k+i)) :: block1
-                    for(k <- 1 to sizeX) block2 = wrapAnd(block1.updated(k-1, block1(k-1).asInstanceOf[NonTerminal].right)) :: block2
-                }
-                block3 = wrapOr(block2) :: block3
-            }
-        }
-        val colblocks: Formula = wrapAnd(block3)
-
-
-
-        for (rL <- rowList) {
-            if(rL(0) != 0) wholeFormulaList = createRowFormula(rowNumber, sizeY, rL) :: wholeFormulaList
-            rowNumber = rowNumber + 1
-        }
-        for (cL <- colList) {
-            if(cL(0) != 0) wholeFormulaList = createColFormula(colNumber, sizeX, cL) :: wholeFormulaList
-            colNumber = colNumber + 1
-        }
-        wrapAnd(List(rowblocks, colblocks, wrapAnd(wholeFormulaList)))
-    }
-    
-
-    def createRowFormula(rowNumber: Int, rowSize: Int, condList: List[Int]): Formula = {
-        val pivotCondList = (wrapOr(createPivotIndex(rowSize, condList.length) map(_.zipWithIndex 
-            map({ case (a, b) => Terminal("pr" + (b + 1) + rowNumber + a)})) map(wrapAnd(_))))
-        val blockList0 = condList map ((1 to rowSize).toList.sliding(_).toList map (_ map ("m" + rowNumber + _)))
-        val blockList1 = blockList0.zipWithIndex map ({case (block, index) => block map ({case (m) => 
-            val withoutNeg = "pr" + (index + 1) + m(0).tail :: m
-            var withNeg: List[String] = withoutNeg
-            if (withoutNeg.tail.head.last.toInt-48 != 1) withNeg = ("-" + withoutNeg.tail.head.substring(0, 2) + (withoutNeg.tail.head.last.toInt-48 - 1)) :: withNeg
-            if (withoutNeg.last.last.toInt-48 != rowSize) withNeg = ("-" + withoutNeg.last.substring(0, 2) + (withoutNeg.last.last.toInt-48 + 1)) :: withNeg
-            withNeg})})
-        val blockList2 = blockList1 map (_ map (_ map ({case (s) => 
-            if(s.head != '-') Terminal(s)
-            else NonTerminal(Nothing, Not, Terminal(s.tail))})))
-        val blockList3 = blockList2 map (_ map (wrapAnd(_)))
-        val blockList4 = blockList3 map (wrapOr(_))
-        val blockCondList = wrapAnd(blockList4)
-        wrapAnd(List(blockCondList, pivotCondList))
-    }
-
-    def createColFormula(colNumber: Int, colSize: Int, condList: List[Int]): Formula = {
-        val pivotCondList = (wrapOr(createPivotIndex(colSize, condList.length) map(_.zipWithIndex 
-            map({ case (a, b) => Terminal("pc" + (b + 1) + a + colNumber)})) map(wrapAnd(_))))
-        val blockList0 = condList map ((1 to colSize).toList.sliding(_).toList map (_ map ("m" + _ + colNumber)))
-        val blockList1 = blockList0.zipWithIndex map ({case (block, index) => block map ({case (m) => 
-            val withoutNeg = "pc" + (index + 1) + m(0).tail :: m
-            var withNeg: List[String] = withoutNeg
-            if (withoutNeg.tail.head(1).toInt-48 != 1) withNeg = ("-" + withoutNeg.tail.head(0).toString + (withoutNeg.tail.head(1).toInt-48 - 1) + withoutNeg.tail.head(2)) :: withNeg
-            if (withoutNeg.last(1).toInt-48 != colSize) withNeg = ("-" + withoutNeg.last(0).toString + (withoutNeg.last(1).toInt-48 + 1) + withoutNeg.last(2)) :: withNeg
-            withNeg})})
-        val blockList2 = blockList1 map (_ map (_ map ({case (s) => 
-            if(s.head != '-') Terminal(s)
-            else NonTerminal(Nothing, Not, Terminal(s.tail))})))
-        val blockList3 = blockList2 map (_ map (wrapAnd(_)))
-        val blockList4 = blockList3 map (wrapOr(_))
-        val blockCondList = wrapAnd(blockList4)
-        wrapAnd(List(blockCondList, pivotCondList))
-    }
 
 
     def createPivotIndex(size: Int, cnum: Int): List[List[Int]] = {
